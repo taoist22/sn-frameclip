@@ -1,0 +1,10 @@
+{
+  "name": "FrameClip",
+  "desc": "Capture a region of a PDF page as a PNG you can insert into a note.",
+  "iconPath": "assets/icon.png",
+  "versionName": "0.1.15-beta",
+  "versionCode": "16",
+  "pluginID": "frmc1ipv8xq4h2n7",
+  "pluginKey": "FrameClip",
+  "jsMainPath": "index"
+}

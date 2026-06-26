@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Build outputs & generated artifacts (any "build" dir, at any depth)
+build/
+.gradle/
+*.apk
+*.npk
+
+# Android Studio / IntelliJ
+*.iml
+.idea/
+local.properties
+
+# Signing material — never commit
+*.jks
+*.keystore
+
+# OS cruft
+.DS_Store
+**/.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# Claude Code: machine-specific local settings + session snapshot
+.claude/settings.local.json
+RESUME.md
+
+# Env
+.env
+.env.local
