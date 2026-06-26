@@ -13,6 +13,6 @@ PluginManager.init();
 PluginManager.registerButton(BUTTON_TYPE_TOOLBAR, ['NOTE', 'DOC'], {
   id: 100,
   name: 'FrameClip',
-  icon: Image.resolveAssetSource(require('./assets/icon.png')).uri,
+  icon: Image.resolveAssetSource(require('./assets/clipper.png')).uri,
   showType: SHOW_TYPE_WITH_UI,
 });

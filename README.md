@@ -4,8 +4,8 @@ FrameClip captures a region of a **PDF page** as a PNG and inserts it into a not
 It renders the page natively, lets you draw and fine-tune a crop, optionally
 darkens it for faint scans, and keeps a gallery of clips you can drop into any note.
 
-> Status: **beta**, tested on the Supernote Nomad (A6 X2). Layout is device-aware,
-> so it adapts to other screen sizes, but only the Nomad has been verified on-device.
+> Status: **beta**, tested on the Supernote Nomad (A6 X2) and Manta. Layout is
+> device-aware, so it adapts to each screen size.
 
 ## What it does
 
@@ -61,6 +61,10 @@ The packaged plugin is written to `build/outputs/FrameClip.snplg`.
 - `android/app/src/main/java/com/snframeclip/FrameClipNativeModule.java` — native
   page render, crop, contrast/threshold, and clip management.
 - `PluginConfig.json` — Supernote plugin manifest.
+
+## Credits
+
+Icon: [Crop icons created by Fajrul Fitrianto - Flaticon](https://www.flaticon.com/free-icons/crop)
 
 ## License
 
