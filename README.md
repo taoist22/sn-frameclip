@@ -1,3 +1,7 @@
+
+
+https://github.com/user-attachments/assets/b0c25294-76b5-46cd-a46e-44a928650e26
+
 # FrameClip for Supernote
 
 FrameClip captures a region of a **PDF page** as a PNG and inserts it into a note.
