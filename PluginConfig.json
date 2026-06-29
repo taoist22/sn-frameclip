@@ -1,9 +1,9 @@
 {
   "name": "FrameClip",
-  "desc": "Capture a region of a PDF page as a PNG you can insert into a note.",
+  "desc": "Capture a region of a PDF page (or a screenshot, e.g. an EPUB image) as a PNG you can insert into a note.",
   "iconPath": "assets/clipper.png",
-  "versionName": "0.1.16-beta",
-  "versionCode": "17",
+  "versionName": "0.1.17-beta",
+  "versionCode": "18",
   "pluginID": "frmc1ipv8xq4h2n7",
   "pluginKey": "FrameClip",
   "jsMainPath": "index"

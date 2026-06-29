@@ -15,6 +15,10 @@ darkens it for faint scans, and keeps a gallery of clips you can drop into any n
 
 - **Render-then-crop:** opens the current PDF page, renders it to an image, and
   lets you crop from that — no screenshots required.
+- **Crop from a screenshot:** EPUBs can't be render-cropped (they reflow, so there
+  is no fixed page to rasterize). To pull an image out of an EPUB, take a Supernote
+  screenshot of the page, then launch FrameClip from a non-PDF document — it lists
+  your recent screenshots; tap one to crop it just like a PDF page.
 - **Draw-first cropping:** drag anywhere on the page to draw the crop box, drag the
   corner to resize, and use the on-screen buttons to nudge/resize precisely.
 - **Page navigation:** ‹ Prev / Next › step through a multi-page PDF without leaving
@@ -36,6 +40,14 @@ darkens it for faint scans, and keeps a gallery of clips you can drop into any n
 6. Open the destination note and launch FrameClip there.
 7. Pick a clip from the gallery and tap **Insert Selected**. Resize it in the note
    as usual.
+
+### From an EPUB (via screenshot)
+
+1. In the EPUB, navigate to the page with the image and take a Supernote screenshot.
+2. Launch FrameClip — it shows your recent screenshots from
+   `/storage/emulated/0/SCREENSHOT`.
+3. Tap the screenshot, draw a box around just the image (excluding the page chrome),
+   and tap **Capture Clip**. From here it behaves exactly like a PDF crop.
 
 Saved clips live in `/storage/emulated/0/MyStyle/FrameClip/`.
 

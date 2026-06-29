@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import {
+  FileUtils,
   PluginCommAPI,
   PluginDocAPI,
   PluginFileAPI,
@@ -200,6 +201,61 @@ async function renderPage(
   return {image: null, log};
 }
 
+// Supernote writes system screenshots here (user-confirmed on Manta). The
+// screenshot feature works inside EPUBs — which can't be render-cropped because
+// they reflow (no fixed page) — so cropping a screenshot is the way to pull an
+// image out of an EPUB. The crop pipeline already accepts any source path, so a
+// screenshot just becomes another PageImage feeding the same crop UI.
+const SCREENSHOT_DIR = '/storage/emulated/0/SCREENSHOT';
+const IMAGE_EXT = /\.(png|jpe?g|webp)$/i;
+const MAX_SCREENSHOTS = 24;
+
+// List recent screenshots newest-first, resolving each to an ImageInfo (with the
+// dimensions/uri the crop UI and thumbnails need). Defensive about the SDK's
+// loose return shapes; never throws (returns [] + a diagnostic log instead).
+async function listScreenshots(): Promise<{shots: ImageInfo[]; log: string[]}> {
+  const log: string[] = [`screenshots @ ${new Date().toLocaleTimeString()}`];
+  if (!FileUtils?.listFiles) {
+    return {shots: [], log: [...log, 'FileUtils.listFiles unavailable']};
+  }
+  let raw: any;
+  try {
+    const list = (await FileUtils.listFiles(SCREENSHOT_DIR)) as any;
+    raw = Array.isArray(list) ? list : list?.result;
+  } catch (e) {
+    return {shots: [], log: [...log, `listFiles threw: ${errMsg(e)}`]};
+  }
+  if (!Array.isArray(raw)) {
+    return {shots: [], log: [...log, `listFiles returned no array (${typeof raw})`]};
+  }
+  const paths = raw
+    .map((item: any) => (typeof item === 'string' ? item : item?.path))
+    .filter((p: unknown): p is string => typeof p === 'string' && IMAGE_EXT.test(p))
+    // Screenshots are timestamp-named, so reverse-lexical ≈ newest first.
+    .sort((a: string, b: string) => baseName(b).localeCompare(baseName(a)));
+  log.push(`found ${paths.length} image file(s)`);
+
+  const shots: ImageInfo[] = [];
+  for (const path of paths.slice(0, MAX_SCREENSHOTS)) {
+    try {
+      const info = (await FrameClipNative.readImageInfo(path)) as any;
+      if (info?.width > 0 && info?.height > 0) {
+        shots.push({
+          path,
+          uri: info.uri,
+          name: baseName(path),
+          width: info.width,
+          height: info.height,
+        });
+      }
+    } catch (e) {
+      log.push(`readImageInfo failed for ${baseName(path)}: ${errMsg(e)}`);
+    }
+  }
+  log.push(`resolved ${shots.length} screenshot(s)`);
+  return {shots, log};
+}
+
 const MIN_CROP = 80;
 const MOVE_STEP = 24;
 const SIZE_STEP = 48;
@@ -248,6 +304,7 @@ export default function App(): React.JSX.Element {
   const [page, setPage] = useState<PageImage | null>(null);
   const [latestClip, setLatestClip] = useState<CropResult | null>(null);
   const [clips, setClips] = useState<ImageInfo[]>([]);
+  const [screenshots, setScreenshots] = useState<ImageInfo[]>([]);
   const [selectedClip, setSelectedClip] = useState<ImageInfo | null>(null);
   const [pendingDelete, setPendingDelete] = useState(false);
   const [currentPath, setCurrentPath] = useState('');
@@ -283,6 +340,7 @@ export default function App(): React.JSX.Element {
     setCrop(null);
     setTone('off');
     setClips([]);
+    setScreenshots([]);
     setSelectedClip(null);
     setPendingDelete(false);
     setDiag([]);
@@ -330,7 +388,18 @@ export default function App(): React.JSX.Element {
             : 'No clips yet. Open a PDF, capture a region, then come back here.',
         );
       } else {
-        setMessage('Open a PDF and launch FrameClip to capture a region.');
+        // Not a PDF (correct render path) and not a note (insert path). This is
+        // where EPUBs land: render-crop is impossible (reflowable, no fixed
+        // page), so offer the screenshot route — crop an image out of a
+        // screenshot of the page instead.
+        const {shots, log} = await listScreenshots();
+        setDiag(log);
+        setScreenshots(shots);
+        setMessage(
+          shots.length
+            ? 'Tap a screenshot to crop an image from it (e.g. a picture in an EPUB).'
+            : `No screenshots found in ${SCREENSHOT_DIR}.\nTake a screenshot of the page, then tap Reload.`,
+        );
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -353,6 +422,7 @@ export default function App(): React.JSX.Element {
     setCrop(null);
     setTone('off');
     setClips([]);
+    setScreenshots([]);
     setSelectedClip(null);
     setPendingDelete(false);
     setDiag([]);
@@ -563,6 +633,28 @@ export default function App(): React.JSX.Element {
     [busy, currentPath, page],
   );
 
+  // Load a chosen screenshot into the crop UI as a single-page PageImage. The
+  // crop pipeline (handleCapture/cropImage) reads page.path, so the screenshot
+  // file becomes the crop source directly — no render step needed.
+  const useScreenshot = useCallback(
+    (shot: ImageInfo) => {
+      if (busy) return;
+      setPage({
+        path: shot.path,
+        uri: shot.uri,
+        name: shot.name,
+        width: shot.width,
+        height: shot.height,
+        pageIndex: 0,
+        pageCount: 1,
+      });
+      setCrop(null);
+      setStage('crop');
+      setMessage('');
+    },
+    [busy],
+  );
+
   const handleCapture = useCallback(async () => {
     if (!page || !crop || busy) return;
     const t = TONES.find(x => x.key === tone) ?? TONES[1];
@@ -746,12 +838,52 @@ export default function App(): React.JSX.Element {
               </Pressable>
             </View>
           </View>
+        ) : screenshots.length > 0 ? (
+          <View style={styles.galleryView}>
+            <Text style={styles.message}>{message}</Text>
+            <ScrollView contentContainerStyle={styles.galleryGrid}>
+              {screenshots.map(shot => (
+                <Pressable
+                  key={shot.path}
+                  style={styles.thumb}
+                  disabled={busy}
+                  onPress={() => useScreenshot(shot)}>
+                  <Image
+                    source={{uri: shot.uri}}
+                    style={styles.thumbImage}
+                    resizeMode="contain"
+                  />
+                </Pressable>
+              ))}
+            </ScrollView>
+            <View style={styles.galleryActions}>
+              <Pressable style={styles.secondaryButton} onPress={load}>
+                <Text style={styles.secondaryButtonText}>Reload</Text>
+              </Pressable>
+            </View>
+          </View>
         ) : (
           <View style={styles.center}>
             <Text style={styles.message}>{message}</Text>
             <Pressable style={styles.secondaryButton} onPress={load}>
               <Text style={styles.secondaryButtonText}>Reload</Text>
             </Pressable>
+            {diag.length > 0 && (
+              <Pressable onPress={() => setShowDiag(v => !v)}>
+                <Text style={styles.diagToggle}>
+                  {showDiag ? '▾ hide diagnostics' : '▸ diagnostics'}
+                </Text>
+              </Pressable>
+            )}
+            {showDiag && diag.length > 0 && (
+              <View style={styles.diagBox}>
+                {diag.map((line, i) => (
+                  <Text key={i} style={styles.diagText}>
+                    {line}
+                  </Text>
+                ))}
+              </View>
+            )}
           </View>
         )
       ) : (
