@@ -35,10 +35,13 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 public class FrameClipNativeModule extends ReactContextBaseJavaModule {
     private static final int MAX_SCAN_FILES_PER_DIR = 800;
@@ -66,6 +69,57 @@ public class FrameClipNativeModule extends ReactContextBaseJavaModule {
             promise.resolve(imageInfo(latest));
         } catch (Exception error) {
             promise.reject("FRAMECLIP_FIND_FAILED", error);
+        }
+    }
+
+    @ReactMethod
+    public void listScreenshots(Promise promise) {
+        try {
+            ArrayList<File> files = new ArrayList<>();
+            Set<String> seen = new HashSet<>();
+            collectImages(primaryScreenshotDir(), files, seen);
+            if (files.isEmpty()) {
+                for (File dir : fallbackScreenshotDirs()) {
+                    collectImages(dir, files, seen);
+                }
+            }
+
+            ArrayList<File> unique = new ArrayList<>();
+            Set<String> traits = new HashSet<>();
+            for (File file : files) {
+                if (traits.add(imageTraitKey(file))) {
+                    unique.add(file);
+                }
+            }
+            files = unique;
+            files.sort(Comparator.comparingLong(File::lastModified).reversed());
+
+            WritableArray shots = Arguments.createArray();
+            int limit = Math.min(files.size(), 40);
+            for (int i = 0; i < limit; i++) {
+                try {
+                    shots.pushMap(imageInfo(files.get(i)));
+                } catch (Exception ignored) {
+                }
+            }
+            promise.resolve(shots);
+        } catch (Exception error) {
+            promise.reject("FRAMECLIP_LIST_SCREENSHOTS_FAILED", error);
+        }
+    }
+
+    @ReactMethod
+    public void deleteScreenshot(String path, Promise promise) {
+        try {
+            File target = screenshotTarget(path);
+            if (target == null) {
+                promise.reject("FRAMECLIP_DELETE_SCREENSHOT_INVALID", "Not a screenshot path: " + path);
+                return;
+            }
+            boolean ok = !target.exists() || target.delete();
+            promise.resolve(ok);
+        } catch (Exception error) {
+            promise.reject("FRAMECLIP_DELETE_SCREENSHOT_FAILED", error);
         }
     }
 
@@ -489,23 +543,103 @@ public class FrameClipNativeModule extends ReactContextBaseJavaModule {
     }
 
     private File findLatestScreenshot() {
-        File root = Environment.getExternalStorageDirectory();
-        List<File> candidates = Arrays.asList(
-                new File(root, "Screenshot"),
-                new File(root, "Screenshots"),
-                new File(root, "Pictures/Screenshot"),
-                new File(root, "Pictures/Screenshots"),
-                new File(root, "DCIM/Screenshots")
-        );
+        File latest = newestImageIn(primaryScreenshotDir());
+        if (latest != null) {
+            return latest;
+        }
 
-        File latest = null;
-        for (File dir : candidates) {
+        for (File dir : fallbackScreenshotDirs()) {
             File found = newestImageIn(dir);
             if (found != null && (latest == null || found.lastModified() > latest.lastModified())) {
                 latest = found;
             }
         }
         return latest;
+    }
+
+    private File primaryScreenshotDir() {
+        File root = Environment.getExternalStorageDirectory();
+        return new File(root, "SCREENSHOT");
+    }
+
+    private List<File> fallbackScreenshotDirs() {
+        File root = Environment.getExternalStorageDirectory();
+        return Arrays.asList(
+                new File(root, "Screenshot"),
+                new File(root, "Screenshots"),
+                new File(root, "PICTURES/SCREENSHOT"),
+                new File(root, "Pictures/Screenshot"),
+                new File(root, "Pictures/Screenshots"),
+                new File(root, "DCIM/SCREENSHOT"),
+                new File(root, "DCIM/Screenshots")
+        );
+    }
+
+    private String imageTraitKey(File file) {
+        String name = file.getName().toLowerCase(Locale.US);
+        long modifiedBucket = file.lastModified() / 1000;
+        return name + "|" + file.length() + "|" + modifiedBucket;
+    }
+
+    private File screenshotTarget(String path) {
+        if (path == null || path.isEmpty()) return null;
+        File candidate = new File(path);
+        if (!candidate.exists() || !candidate.isFile() || !isImage(candidate)) return null;
+
+        if (isInsideDir(candidate, primaryScreenshotDir())) {
+            return candidate;
+        }
+        for (File dir : fallbackScreenshotDirs()) {
+            if (isInsideDir(candidate, dir)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private boolean isInsideDir(File file, File dir) {
+        try {
+            String filePath = file.getCanonicalPath();
+            String dirPath = dir.getCanonicalPath();
+            return filePath.equals(dirPath) || filePath.startsWith(dirPath + File.separator);
+        } catch (Exception ignored) {
+            String filePath = file.getAbsolutePath();
+            String dirPath = dir.getAbsolutePath();
+            return filePath.equals(dirPath) || filePath.startsWith(dirPath + File.separator);
+        }
+    }
+
+    private void collectImages(File dir, ArrayList<File> out, Set<String> seen) {
+        if (dir == null || !dir.exists() || !dir.isDirectory()) {
+            return;
+        }
+
+        ArrayDeque<File> queue = new ArrayDeque<>();
+        queue.add(dir);
+        int visited = 0;
+
+        while (!queue.isEmpty() && visited < MAX_SCAN_FILES_PER_DIR) {
+            File current = queue.removeFirst();
+            visited++;
+            File[] children = current.listFiles();
+            if (children == null) continue;
+            Arrays.sort(children, Comparator.comparingLong(File::lastModified).reversed());
+            for (File child : children) {
+                if (child.isDirectory()) {
+                    queue.add(child);
+                } else if (isImage(child) && !child.getName().startsWith("frameclip_page_")) {
+                    String key;
+                    try {
+                        key = child.getCanonicalPath();
+                    } catch (Exception ignored) {
+                        key = child.getAbsolutePath();
+                    }
+                    if (seen.add(key)) {
+                        out.add(child);
+                    }
+                }
+            }
+        }
     }
 
     private File newestImageIn(File dir) {

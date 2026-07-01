@@ -17,8 +17,8 @@ darkens it for faint scans, and keeps a gallery of clips you can drop into any n
   lets you crop from that — no screenshots required.
 - **Crop from a screenshot:** EPUBs can't be render-cropped (they reflow, so there
   is no fixed page to rasterize). To pull an image out of an EPUB, take a Supernote
-  screenshot of the page, then launch FrameClip from a non-PDF document — it lists
-  your recent screenshots; tap one to crop it just like a PDF page.
+  screenshot of the page, then launch FrameClip — it lists your recent screenshots;
+  tap one to crop it just like a PDF page.
 - **Draw-first cropping:** drag anywhere on the page to draw the crop box, drag the
   corner to resize, and use the on-screen buttons to nudge/resize precisely.
 - **Page navigation:** ‹ Prev / Next › step through a multi-page PDF without leaving
@@ -29,6 +29,8 @@ darkens it for faint scans, and keeps a gallery of clips you can drop into any n
   you; **B/W** produces crisp 1-bit black/white (best for plain text).
 - **Multi-clip gallery:** every capture is saved. In a note, FrameClip shows a
   thumbnail grid — pick one and insert it, or delete clips you no longer need.
+- **Screenshot cleanup:** after clipping from an EPUB/page screenshot, you can
+  manually delete the source screenshot from FrameClip with a two-tap confirmation.
 
 ## Workflow
 
@@ -44,10 +46,17 @@ darkens it for faint scans, and keeps a gallery of clips you can drop into any n
 ### From an EPUB (via screenshot)
 
 1. In the EPUB, navigate to the page with the image and take a Supernote screenshot.
-2. Launch FrameClip — it shows your recent screenshots from
-   `/storage/emulated/0/SCREENSHOT`.
+2. Open the destination note and launch FrameClip. It shows your recent screenshots
+   from `/storage/emulated/0/SCREENSHOT` above the saved-clip gallery.
 3. Tap the screenshot, draw a box around just the image (excluding the page chrome),
    and tap **Capture Clip**. From here it behaves exactly like a PDF crop.
+4. Optional: on the saved screen, tap **Delete Source Screenshot**, then
+   **Confirm Delete Screenshot**, to remove the original full-page screenshot while
+   keeping the saved clip.
+
+In `.note` files, FrameClip is for choosing screenshots to crop and for inserting
+saved clips. It does not replace Supernote's native lasso/clipboard tools for
+editable note content.
 
 Saved clips live in `/storage/emulated/0/MyStyle/FrameClip/`.
 

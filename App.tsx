@@ -58,7 +58,9 @@ type ImageInfo = {
 type FrameClipNativeModule = {
   getLatestClip(): Promise<CropResult | null>;
   listClips(): Promise<ImageInfo[]>;
+  listScreenshots(): Promise<ImageInfo[]>;
   deleteClip(path: string): Promise<boolean>;
+  deleteScreenshot(path: string): Promise<boolean>;
   renderPdfPage(filePath: string, pageNum: number): Promise<PageImage>;
   newRenderTarget(): Promise<string>;
   readImageInfo(path: string): Promise<ImageInfo>;
@@ -215,6 +217,22 @@ const MAX_SCREENSHOTS = 24;
 // loose return shapes; never throws (returns [] + a diagnostic log instead).
 async function listScreenshots(): Promise<{shots: ImageInfo[]; log: string[]}> {
   const log: string[] = [`screenshots @ ${new Date().toLocaleTimeString()}`];
+  try {
+    const nativeShots = await FrameClipNative.listScreenshots();
+    if (Array.isArray(nativeShots) && nativeShots.length > 0) {
+      return {
+        shots: nativeShots.map(shot => ({
+          ...shot,
+          name: shot.name || baseName(shot.path),
+        })),
+        log: [...log, `native found ${nativeShots.length} screenshot(s)`],
+      };
+    }
+    log.push('native found 0 screenshot(s)');
+  } catch (e) {
+    log.push(`native listScreenshots threw: ${errMsg(e)}`);
+  }
+
   if (!FileUtils?.listFiles) {
     return {shots: [], log: [...log, 'FileUtils.listFiles unavailable']};
   }
@@ -306,7 +324,9 @@ export default function App(): React.JSX.Element {
   const [clips, setClips] = useState<ImageInfo[]>([]);
   const [screenshots, setScreenshots] = useState<ImageInfo[]>([]);
   const [selectedClip, setSelectedClip] = useState<ImageInfo | null>(null);
+  const [sourceScreenshot, setSourceScreenshot] = useState<ImageInfo | null>(null);
   const [pendingDelete, setPendingDelete] = useState(false);
+  const [pendingScreenshotDelete, setPendingScreenshotDelete] = useState(false);
   const [currentPath, setCurrentPath] = useState('');
   const [crop, setCrop] = useState<CropRect | null>(null);
   const [tone, setTone] = useState<ToneKey>('off');
@@ -342,7 +362,9 @@ export default function App(): React.JSX.Element {
     setClips([]);
     setScreenshots([]);
     setSelectedClip(null);
+    setSourceScreenshot(null);
     setPendingDelete(false);
+    setPendingScreenshotDelete(false);
     setDiag([]);
     try {
       const pathRes = (await PluginCommAPI.getCurrentFilePath()) as any;
@@ -380,12 +402,17 @@ export default function App(): React.JSX.Element {
         try {
           list = await FrameClipNative.listClips();
         } catch {}
+        const {shots, log} = await listScreenshots();
+        setDiag(log);
+        setScreenshots(shots);
         setClips(list);
         setSelectedClip(list[0] ?? null);
         setMessage(
-          list.length
-            ? 'Tap a clip below, then Insert it onto this page.'
-            : 'No clips yet. Open a PDF, capture a region, then come back here.',
+          shots.length
+            ? 'Tap a screenshot to crop it, or choose a saved clip to insert.'
+            : list.length
+              ? 'Tap a clip below, then Insert it onto this page.'
+              : `No screenshots found in ${SCREENSHOT_DIR}, and no clips are saved yet.`,
         );
       } else {
         // Not a PDF (correct render path) and not a note (insert path). This is
@@ -424,7 +451,9 @@ export default function App(): React.JSX.Element {
     setClips([]);
     setScreenshots([]);
     setSelectedClip(null);
+    setSourceScreenshot(null);
     setPendingDelete(false);
+    setPendingScreenshotDelete(false);
     setDiag([]);
     setMessage('Tap Reload to render the current page.');
     setLoading(false);
@@ -650,6 +679,8 @@ export default function App(): React.JSX.Element {
       });
       setCrop(null);
       setStage('crop');
+      setSourceScreenshot(shot);
+      setPendingScreenshotDelete(false);
       setMessage('');
     },
     [busy],
@@ -674,6 +705,7 @@ export default function App(): React.JSX.Element {
       setSaved(result);
       setLatestClip(result);
       setStage('saved');
+      setPendingScreenshotDelete(false);
       setMessage('Clip saved.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -762,6 +794,32 @@ export default function App(): React.JSX.Element {
     }
   }, [busy, pendingDelete, selectedClip]);
 
+  const handleDeleteSourceScreenshot = useCallback(async () => {
+    if (!sourceScreenshot || busy) return;
+    if (!pendingScreenshotDelete) {
+      setPendingScreenshotDelete(true);
+      return;
+    }
+    setBusy(true);
+    try {
+      const ok = await FrameClipNative.deleteScreenshot(sourceScreenshot.path);
+      if (ok) {
+        const {shots, log} = await listScreenshots();
+        setScreenshots(shots);
+        setDiag(log);
+        setSourceScreenshot(null);
+        setPendingScreenshotDelete(false);
+        setMessage('Source screenshot deleted. Clip saved.');
+      } else {
+        setMessage('Could not delete that screenshot.');
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, pendingScreenshotDelete, sourceScreenshot]);
+
   const close = useCallback(() => {
     resetTransient();
     PluginManager.closePluginView();
@@ -782,10 +840,32 @@ export default function App(): React.JSX.Element {
           <ActivityIndicator size="large" color="#111" />
         </View>
       ) : !page ? (
-        isNoteContext && clips.length > 0 ? (
+        isNoteContext && (clips.length > 0 || screenshots.length > 0) ? (
           <View style={styles.galleryView}>
             <Text style={styles.message}>{message}</Text>
             <ScrollView contentContainerStyle={styles.galleryGrid}>
+              {screenshots.length > 0 && (
+                <Text style={styles.sectionLabel}>Screenshots</Text>
+              )}
+              {screenshots.map(shot => (
+                <Pressable
+                  key={shot.path}
+                  style={styles.thumb}
+                  disabled={busy}
+                  onPress={() => useScreenshot(shot)}>
+                  <Image
+                    source={{uri: shot.uri}}
+                    style={styles.thumbImage}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.thumbLabel} numberOfLines={1}>
+                    {shot.name}
+                  </Text>
+                </Pressable>
+              ))}
+              {clips.length > 0 && (
+                <Text style={styles.sectionLabel}>Saved Clips</Text>
+              )}
               {clips.map(clip => {
                 const active = selectedClip?.path === clip.path;
                 return (
@@ -801,38 +881,45 @@ export default function App(): React.JSX.Element {
                       style={styles.thumbImage}
                       resizeMode="contain"
                     />
+                    <Text style={styles.thumbLabel} numberOfLines={1}>
+                      {clip.name}
+                    </Text>
                   </Pressable>
                 );
               })}
             </ScrollView>
             <View style={styles.galleryActions}>
-              <Pressable
-                style={[
-                  styles.primaryButton,
-                  (busy || !selectedClip) && styles.disabledButton,
-                ]}
-                disabled={busy || !selectedClip}
-                onPress={() => insertPath(selectedClip?.path)}>
-                <Text style={styles.primaryButtonText}>
-                  {busy ? 'Inserting...' : 'Insert Selected'}
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  pendingDelete ? styles.dangerButton : styles.secondaryButton,
-                  (busy || !selectedClip) && styles.disabledButton,
-                ]}
-                disabled={busy || !selectedClip}
-                onPress={handleDeleteSelected}>
-                <Text
-                  style={
-                    pendingDelete
-                      ? styles.dangerButtonText
-                      : styles.secondaryButtonText
-                  }>
-                  {pendingDelete ? 'Tap to confirm' : 'Delete'}
-                </Text>
-              </Pressable>
+              {clips.length > 0 && (
+                <>
+                  <Pressable
+                    style={[
+                      styles.primaryButton,
+                      (busy || !selectedClip) && styles.disabledButton,
+                    ]}
+                    disabled={busy || !selectedClip}
+                    onPress={() => insertPath(selectedClip?.path)}>
+                    <Text style={styles.primaryButtonText}>
+                      {busy ? 'Inserting...' : 'Insert Selected'}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={[
+                      pendingDelete ? styles.dangerButton : styles.secondaryButton,
+                      (busy || !selectedClip) && styles.disabledButton,
+                    ]}
+                    disabled={busy || !selectedClip}
+                    onPress={handleDeleteSelected}>
+                    <Text
+                      style={
+                        pendingDelete
+                          ? styles.dangerButtonText
+                          : styles.secondaryButtonText
+                      }>
+                      {pendingDelete ? 'Tap to confirm' : 'Delete'}
+                    </Text>
+                  </Pressable>
+                </>
+              )}
               <Pressable style={styles.secondaryButton} onPress={load}>
                 <Text style={styles.secondaryButtonText}>Reload</Text>
               </Pressable>
@@ -1127,9 +1214,32 @@ export default function App(): React.JSX.Element {
                   onPress={() => {
                     setStage('crop');
                     setCrop(null);
+                    setPendingScreenshotDelete(false);
                   }}>
                   <Text style={styles.primaryButtonText}>Capture Another</Text>
                 </Pressable>
+                {sourceScreenshot && (
+                  <Pressable
+                    style={[
+                      pendingScreenshotDelete
+                        ? styles.dangerButton
+                        : styles.secondaryButton,
+                      busy && styles.disabledButton,
+                    ]}
+                    disabled={busy}
+                    onPress={handleDeleteSourceScreenshot}>
+                    <Text
+                      style={
+                        pendingScreenshotDelete
+                          ? styles.dangerButtonText
+                          : styles.secondaryButtonText
+                      }>
+                      {pendingScreenshotDelete
+                        ? 'Confirm Delete Screenshot'
+                        : 'Delete Source Screenshot'}
+                    </Text>
+                  </Pressable>
+                )}
                 <Pressable style={styles.secondaryButton} onPress={close}>
                   <Text style={styles.secondaryButtonText}>Done</Text>
                 </Pressable>
@@ -1425,6 +1535,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingBottom: 8,
   },
+  sectionLabel: {
+    width: '100%',
+    color: '#222',
+    fontSize: 15,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginTop: 2,
+  },
   thumb: {
     width: 150,
     height: 150,
@@ -1441,7 +1559,14 @@ const styles = StyleSheet.create({
   },
   thumbImage: {
     width: '100%',
-    height: '100%',
+    height: 118,
+  },
+  thumbLabel: {
+    width: '100%',
+    color: '#444',
+    fontSize: 11,
+    lineHeight: 15,
+    textAlign: 'center',
   },
   galleryActions: {
     flexDirection: 'row',

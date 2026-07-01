@@ -1,6 +1,6 @@
 {
   "name": "FrameClip",
-  "version": "0.1.16-beta",
+  "version": "0.1.20-beta",
   "description": "Capture a region of a PDF page as a PNG you can insert into a note.",
   "private": true,
   "scripts": {

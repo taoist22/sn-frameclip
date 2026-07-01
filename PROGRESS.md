@@ -29,9 +29,82 @@ blank/smeared render is distinguishable from a real one on-device.
 ## Latest Build
 
 - Package: `/Users/ctreatherford/supernote-plugins/sn-frameclip/build/outputs/FrameClip.snplg`
-- `package.json`: `0.1.11-beta`
-- `PluginConfig.json`: `versionName` `0.1.11-beta`, `versionCode` `12`
+- `package.json`: `0.1.20-beta`
+- `PluginConfig.json`: `versionName` `0.1.20-beta`, `versionCode` `21`
 - Packaged config verified: `nativeCodePackage: "/app.npk"`, `reactPackages` present.
+
+## Fixed in 0.1.18-beta — EPUB Screenshot Picker Missing From Notes
+
+User report: EPUB screenshot flow previously worked by taking a Supernote
+screenshot, opening a note, launching FrameClip, and choosing that screenshot.
+The screenshot file existed in the device `SCREENSHOT` folder but no longer
+appeared in FrameClip.
+
+Root causes:
+
+- Note context only loaded saved clips via `FrameClipNative.listClips()`. It no
+  longer loaded recent screenshots, so the EPUB screenshot picker was hidden
+  exactly where the user needed it.
+- Screenshot listing in JS depended on `FileUtils.listFiles` for one hardcoded
+  directory. Native direct filesystem listing is more reliable for this device
+  class.
+
+Fix:
+
+- Added native `FrameClipNative.listScreenshots()` in
+  `android/app/src/main/java/com/snframeclip/FrameClipNativeModule.java`.
+- Native screenshot lookup now searches uppercase and common folders:
+  `/sdcard/SCREENSHOT`, `/sdcard/Screenshot`, `/sdcard/Screenshots`,
+  `/sdcard/PICTURES/SCREENSHOT`, `/sdcard/Pictures/Screenshot`,
+  `/sdcard/Pictures/Screenshots`, `/sdcard/DCIM/SCREENSHOT`,
+  `/sdcard/DCIM/Screenshots`.
+- `App.tsx` now uses native `listScreenshots()` first, with old `FileUtils`
+  listing as a fallback.
+- In `.note` context, FrameClip now loads both recent screenshots and saved
+  clips. The note gallery shows a `Screenshots` section for cropping EPUB/page
+  screenshots and a `Saved Clips` section for inserting existing clips.
+
+## Fixed in 0.1.19-beta — Duplicate Screenshot Thumbnails
+
+User report: screenshots appeared duplicated or triplicated after 0.1.18-beta.
+
+Likely cause: Android/Supernote exposes the same storage through multiple path
+aliases. Searching every screenshot folder up front can discover the same physical
+image more than once.
+
+Fix:
+
+- Native screenshot scan now prefers the confirmed `/sdcard/SCREENSHOT` folder.
+- Fallback screenshot folders are scanned only if the primary folder is empty.
+- The list also dedupes by image traits (`filename + size + modified timestamp
+  bucket`) instead of relying only on canonical path, since aliases may still
+  report different canonical paths on-device.
+
+Scope decision: do **not** add note-page capture/clipboard behavior yet. In
+`.note` files, FrameClip remains for choosing EPUB/page screenshots to crop and
+for inserting/managing saved clips. Native Supernote lasso/clipboard already
+handles editable note content better.
+
+## Added in 0.1.20-beta — Manual Source Screenshot Deletion
+
+User request: after clipping from an EPUB/page screenshot, allow deleting the
+original screenshot from inside FrameClip instead of requiring the user to open
+the device `SCREENSHOT` folder separately.
+
+Implementation:
+
+- Added native `deleteScreenshot(path)` in `FrameClipNativeModule.java`.
+- Deletion is validated: only image files inside recognized screenshot folders
+  can be removed.
+- No automatic deletion. After a screenshot crop is saved, the saved screen shows
+  `Delete Source Screenshot`.
+- Deletion requires two taps:
+  1. `Delete Source Screenshot`
+  2. `Confirm Delete Screenshot`
+- After deletion, screenshot gallery state is refreshed and the saved clip remains.
+
+UX decision: screenshot deletion is tied to the source screenshot used for the
+current crop. The screenshot gallery still keeps the simple tap-to-crop behavior.
 
 ## Device
 
